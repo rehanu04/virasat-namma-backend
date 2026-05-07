@@ -18,7 +18,7 @@ def get_ai_client():
             _ai_client = genai.GenerativeModel('gemini-1.5-flash')
     return _ai_client
 
-app = FastAPI(title="Virasat-Namma Excellence API", version="1.7.0")
+app = FastAPI(title="Virasat-Namma Explorer API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,12 +28,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Heritage Metadata ──────────────────────────────────────────────────────
-SITES_METADATA = {
-    "site_001": "Bangalore Palace",
-    "site_002": "Vidhana Soudha",
-    "site_003": "Tipu Sultan's Summer Palace",
-    "hampi": "Hampi Group of Monuments"
+# ─── Flagship Heritage Database (10 Major Sites) ──────────────────────────
+SITES_DB = {
+    "site_001": {"name": "Bangalore Palace", "lat": 12.9988, "lon": 77.5921},
+    "site_002": {"name": "Vidhana Soudha", "lat": 12.9796, "lon": 77.5912},
+    "site_003": {"name": "Tipu Sultan's Summer Palace", "lat": 12.9593, "lon": 77.5738},
+    "site_004": {"name": "Hampi (Virupaksha Temple)", "lat": 15.3350, "lon": 76.4600},
+    "site_005": {"name": "Mysore Palace", "lat": 12.3051, "lon": 76.6551},
+    "site_006": {"name": "Belur Chennakesava Temple", "lat": 13.1623, "lon": 75.8596},
+    "site_007": {"name": "Halebidu Hoysaleswara", "lat": 13.2120, "lon": 75.9942},
+    "site_008": {"name": "Pattadakal Monuments", "lat": 15.9490, "lon": 75.8164},
+    "site_009": {"name": "Gol Gumbaz (Vijayapura)", "lat": 16.8301, "lon": 75.7360},
+    "site_010": {"name": "Shravanabelagola (Gommateshwara)", "lat": 12.8573, "lon": 76.4819},
 }
 
 class ChatRequest(BaseModel):
@@ -41,86 +47,57 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 async def agent_chat(request: ChatRequest):
+    """
+    Virasat Historian: Recovery Update.
+    The AI is now instructed to be welcoming and provide deep insights.
+    """
     model = get_ai_client()
-    if not model: return {"response": "Brain offline."}
+    if not model: return {"response": "The archives are currently unreachable (API Key Missing)."}
     
-    context = (
-        "You are the Virasat Historian. Provide concise info about Bangalore heritage. "
-        "If the user wants to visit a place, append '[NAVIGATE:ID]'. "
-        "IDs: site_001 (Palace), site_002 (Soudha), site_003 (Tipu), HAMPI (Hampi)."
+    system_instruction = (
+        "You are the 'Virasat Historian', a wise and welcoming guide to Karnataka's heritage. "
+        "You have full access to Karnataka's historical database including sites like "
+        "Hampi, Mysore Palace, and Bangalore's monuments. "
+        "Respond warmly to greetings. Provide deep, scholarly insights but keep them engaging. "
+        "If a user asks to go to a site, use [NAVIGATE:site_id] where site_id is site_001 to site_010."
     )
+    
     try:
-        res = model.generate_content(f"{context}\nUser: {request.message}")
+        res = model.generate_content(f"{system_instruction}\nUser: {request.message}")
         return {"response": res.text.strip()}
-    except:
-        return {"response": "I cannot access the historical records right now."}
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        return {"response": "I am currently meditating on the scrolls of history. Please try again in a moment."}
 
 @app.get("/api/heritage/scan")
 async def scan_heritage(site_id: str):
-    """
-    Generates a 'Hidden Fact' reward when a user scans a monument QR.
-    """
     model = get_ai_client()
-    site_name = SITES_METADATA.get(site_id, "this monument")
+    site_info = SITES_DB.get(site_id, {"name": "this monument"})
+    site_name = site_info["name"]
     
-    if not model:
-        return {"hidden_fact": f"{site_name} is a cornerstone of Namma Bengaluru's history."}
-        
     prompt = f"Provide one surprising, non-obvious historical fact about {site_name}. One sentence only."
     try:
         res = model.generate_content(prompt)
         return {"hidden_fact": res.text.strip()}
     except:
-        return {"hidden_fact": f"Legend says {site_name} holds secrets yet to be uncovered."}
-
-class RouteRequest(BaseModel):
-    origin_lat: float
-    origin_lon: float
-    dest_lat: float
-    dest_lon: float
-
-@app.post("/api/route/distance")
-async def get_road_distance(request: RouteRequest):
-    def haversine(lat1, lon1, lat2, lon2):
-        R = 6371.0
-        dlat = math.radians(lat2 - lat1)
-        dlon = math.radians(lon2 - lon1)
-        a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return R * c
-    straight_line = haversine(request.origin_lat, request.origin_lon, request.dest_lat, request.dest_lon)
-    return {"road_distance": straight_line * 1.4}
-
-@app.get("/api/heritage/hidden")
-async def get_hidden_heritage(lat: float, lon: float, radius: float = 30.0):
-    model = get_ai_client()
-    if not model: return {"sites": []}
-    prompt = (
-        f"Find 3 hidden heritage sites within {radius}km of {lat}, {lon}. "
-        "Return exactly JSON: 'id', 'name', 'description', 'latitude', 'longitude', 'hint', 'image_hint'."
-    )
-    try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if "```json" in text: text = text.split("```json")[1].split("```")[0].strip()
-        return {"sites": json.loads(text)}
-    except: return {"sites": []}
+        return {"hidden_fact": f"The stones of {site_name} whisper secrets of a golden age."}
 
 @app.get("/api/heritage/{site_id}")
 async def get_site_history(site_id: str):
     model = get_ai_client()
-    if not model: raise HTTPException(status_code=503, detail="AI Offline")
-    site_name = SITES_METADATA.get(site_id, "this site")
+    site_info = SITES_DB.get(site_id, {"name": "this site"})
+    site_name = site_info["name"]
     try:
-        response = model.generate_content(f"History of {site_name}. Return JSON: 'history_en', 'history_kn'.")
+        response = model.generate_content(f"Deep history of {site_name}. Return JSON: 'history_en', 'history_kn'.")
         text = response.text.strip()
         if "```json" in text: text = text.split("```json")[1].split("```")[0].strip()
         return json.loads(text)
-    except: return {"history_en": "Data indexed.", "history_kn": "ಮಾಹಿತಿ ಲಭ್ಯವಿದೆ."}
+    except:
+        return {"history_en": "History is being indexed.", "history_kn": "ಮಾಹಿತಿ ಪ್ರಕ್ರಿಯೆಯಲ್ಲಿದೆ."}
 
 @app.get("/api/heritage")
 async def list_sites():
-    return {"sites": [{"id": k, "name": v} for k, v in SITES_METADATA.items()]}
+    return {"sites": [{"id": k, "name": v["name"], "latitude": v["lat"], "longitude": v["lon"]} for k, v in SITES_DB.items()]}
 
 if __name__ == "__main__":
     import uvicorn
