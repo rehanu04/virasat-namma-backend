@@ -1,7 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
+import math
+import json
 import google.generativeai as genai
 
 # ─── Gemini AI Configuration ────────────────────────────────────────────────
@@ -12,7 +14,7 @@ if gemini_key:
 else:
     model = None
 
-app = FastAPI(title="Virasat-Namma Excellence API", version="1.5.0")
+app = FastAPI(title="Virasat-Namma Excellence API", version="1.6.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,32 +32,70 @@ SITES_METADATA = {
     "hampi": "Hampi Group of Monuments"
 }
 
-@app.get("/api/heritage/{site_id}")
-async def get_site_history(site_id: str):
+class RouteRequest(BaseModel):
+    origin_lat: float
+    origin_lon: float
+    dest_lat: float
+    dest_lon: float
+
+@app.post("/api/route/distance")
+async def get_road_distance(request: RouteRequest):
     """
-    Uses Gemini to generate bilingual historical narratives for the AI Storyteller.
+    Estimates road distance using a multiplier (1.4x) on the Haversine distance.
+    In production, this would call OSRM or Google Distance Matrix.
     """
-    if not model: raise HTTPException(status_code=503, detail="AI Storyteller Offline")
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+
+    straight_line = haversine(request.origin_lat, request.origin_lon, request.dest_lat, request.dest_lon)
+    # Applying road coefficient multiplier (1.4x)
+    return {"road_distance": straight_line * 1.4}
+
+@app.get("/api/heritage/hidden")
+async def get_hidden_heritage(lat: float, lon: float, radius: float = 30.0):
+    """
+    Uses Gemini to discover 'Hidden Heritage' sites near the user.
+    """
+    if not model: return {"sites": []}
     
-    site_name = SITES_METADATA.get(site_id, "this heritage site")
     prompt = (
-        f"Generate a historical summary for {site_name}. "
-        "Return exactly a JSON object with: "
-        "'history_en' (3 sentences in English) and "
-        "'history_kn' (3 sentences in Kannada). "
-        "Strictly scholarly tone. Ensure the output is valid JSON."
+        f"Find 3 hidden or lesser-known heritage sites within {radius}km of latitude {lat}, longitude {lon} (Bangalore area). "
+        "Return exactly a JSON list of objects with: "
+        "'id', 'name', 'description', 'latitude', 'longitude', 'hint' (where to find QR), 'image_hint'."
+        "Ensure valid JSON output."
     )
     
     try:
         response = model.generate_content(prompt)
-        # Simple extraction logic for JSON if Gemini adds markdown
         text = response.text.strip()
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()
         
-        import json
+        sites = json.loads(text)
+        return {"sites": sites}
+    except Exception as e:
+        return {"sites": []}
+
+@app.get("/api/heritage/{site_id}")
+async def get_site_history(site_id: str):
+    if not model: raise HTTPException(status_code=503, detail="AI Storyteller Offline")
+    site_name = SITES_METADATA.get(site_id, "this heritage site")
+    prompt = (
+        f"Generate a historical summary for {site_name}. "
+        "Return exactly a JSON object with: 'history_en' and 'history_kn'. "
+        "Strictly scholarly tone."
+    )
+    try:
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
         history_data = json.loads(text)
-        
         return {
             "site_id": site_id,
             "site_name": site_name,
@@ -63,24 +103,13 @@ async def get_site_history(site_id: str):
             "history_kn": history_data.get("history_kn", "")
         }
     except Exception as e:
-        return {
-            "site_id": site_id,
-            "site_name": site_name,
-            "history_en": f"Historical data for {site_name} is being indexed.",
-            "history_kn": f"{site_name} ಬಗ್ಗೆ ಮಾಹಿತಿ ಶೀಘ್ರದಲ್ಲೇ ಲಭ್ಯವಿರುತ್ತದೆ."
-        }
-
-@app.post("/api/chat")
-async def agent_chat(request: dict):
-    if not model: return {"response": "Brain offline."}
-    msg = request.get("message", "")
-    context = (
-        "You are the Virasat Agent. If a user wants to go somewhere, append '[NAVIGATE:ID]'. "
-        "IDs: site_001 (Palace), site_002 (Soudha), site_003 (Tipu), HAMPI (Hampi)."
-    )
-    res = model.generate_content(f"{context}\nUser: {msg}")
-    return {"response": res.text.strip()}
+        return {"history_en": "Data indexed.", "history_kn": "ಮಾಹಿತಿ ಲಭ್ಯವಿದೆ."}
 
 @app.get("/api/heritage")
 async def list_sites():
     return {"sites": [{"id": k, "name": v} for k, v in SITES_METADATA.items()]}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
