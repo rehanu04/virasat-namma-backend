@@ -40,20 +40,35 @@ async def get_site_history(site_id: str):
     site_name = SITES_METADATA.get(site_id, "this heritage site")
     prompt = (
         f"Generate a historical summary for {site_name}. "
-        "Return exactly two JSON fields: 'history_en' (English, 3 sentences) "
-        "and 'history_kn' (Kannada, 3 sentences). Strictly scholarly tone. No music."
+        "Return exactly a JSON object with: "
+        "'history_en' (3 sentences in English) and "
+        "'history_kn' (3 sentences in Kannada). "
+        "Strictly scholarly tone. Ensure the output is valid JSON."
     )
     
     try:
         response = model.generate_content(prompt)
-        # Assuming the response text is clean or manageable
+        # Simple extraction logic for JSON if Gemini adds markdown
+        text = response.text.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        
+        import json
+        history_data = json.loads(text)
+        
         return {
             "site_id": site_id,
             "site_name": site_name,
-            "narrative": response.text.strip()
+            "history_en": history_data.get("history_en", ""),
+            "history_kn": history_data.get("history_kn", "")
         }
     except Exception as e:
-        return {"narrative": "History is being preserved. Please check back soon."}
+        return {
+            "site_id": site_id,
+            "site_name": site_name,
+            "history_en": f"Historical data for {site_name} is being indexed.",
+            "history_kn": f"{site_name} ಬಗ್ಗೆ ಮಾಹಿತಿ ಶೀಘ್ರದಲ್ಲೇ ಲಭ್ಯವಿರುತ್ತದೆ."
+        }
 
 @app.post("/api/chat")
 async def agent_chat(request: dict):
