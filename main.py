@@ -34,6 +34,12 @@ SITES_DB = {
     "site_002": {"name": "Vidhana Soudha", "lat": 12.9796, "lon": 77.5912},
     "site_003": {"name": "Tipu Sultan's Palace", "lat": 12.9593, "lon": 77.5738},
     "site_004": {"name": "Hampi", "lat": 15.3350, "lon": 76.4600},
+    "site_005": {"name": "Belur Chennakesava", "lat": 13.1625, "lon": 75.8596},
+    "site_006": {"name": "Mysore Palace", "lat": 12.3052, "lon": 76.6552},
+    "site_007": {"name": "Halebidu", "lat": 13.2119, "lon": 75.9926},
+    "site_008": {"name": "Pattadakal", "lat": 15.9485, "lon": 75.8166},
+    "site_009": {"name": "Gol Gumbaz", "lat": 16.8301, "lon": 75.7360},
+    "site_010": {"name": "Shravanabelagola", "lat": 12.8550, "lon": 76.4850},
 }
 
 class ChatRequest(BaseModel):
@@ -54,9 +60,11 @@ async def agent_chat(request: ChatRequest):
     
     system_instruction = (
         "You are the 'Virasat Historian', a master of Karnataka's history. "
+        "Respond to greetings and questions immediately using the provided heritage context. "
+        "Do not use fallbacks unless the API is physically disconnected. "
         "Provide specific, deep heritage facts based on user queries. "
-        "Do not repeat the same greeting. Be concise, respectful, and scholarly. "
-        "If the user asks about locations, mention relevant sites like Bangalore Palace or Hampi."
+        "Be concise, respectful, and scholarly. "
+        "If the user asks about locations, mention relevant sites like Bangalore Palace, Hampi, Mysore Palace, or Belur."
     )
     try:
         res = model.generate_content(f"{system_instruction}\nUser: {request.message}")
