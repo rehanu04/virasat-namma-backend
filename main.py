@@ -60,18 +60,25 @@ async def agent_chat(request: ChatRequest):
     
     system_instruction = (
         "You are the 'Virasat Historian', a master of Karnataka's history. "
-        "Respond to greetings and questions immediately using the provided heritage context. "
-        "Do not use fallbacks unless the API is physically disconnected. "
-        "Provide specific, deep heritage facts based on user queries. "
-        "Be concise, respectful, and scholarly. "
-        "If the user asks about locations, mention relevant sites like Bangalore Palace, Hampi, Mysore Palace, or Belur."
+        "Respond to all queries with specific, deep-context Karnataka heritage facts immediately. "
+        "DO NOT use placeholders like 'consulting archives' or 'having trouble'. "
+        "If you don't have the exact site in context, use your general knowledge of Karnataka history to assist the explorer. "
+        "Be concise, respectful, and scholarly."
     )
     try:
         res = model.generate_content(f"{system_instruction}\nUser: {request.message}")
-        return {"response": res.text.strip()}
+        response_text = res.text.strip()
+        return {
+            "response": response_text,
+            "message": response_text  # Stabilization field
+        }
     except Exception as e:
         print(f"Gemini Error: {e}")
-        return {"response": "I am currently meditating on a rare inscription. Please ask again in a moment."}
+        error_msg = "I am currently contemplating the inscriptions of Ashoka. Please ask again in a moment."
+        return {
+            "response": error_msg,
+            "message": error_msg
+        }
 
 @app.get("/api/heritage")
 async def list_sites():
